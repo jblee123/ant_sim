@@ -6,6 +6,36 @@ use pw::Transformed;
 
 use super::world_state;
 
+const IDENT_TRANSFORM: [[f64; 3]; 2] = [[1., 0., 0.], [0., 1., 0.]];
+
+const ANT_POLY: [[f64; 2]; 24] = [
+    [0.5, 0.],
+    [1., -0.25],
+    [0.5, -0.5],
+    [0., -1.5],
+    [-1., -1.5],
+    [-1.5, -0.5],
+    [-2., -1.5],
+    [-3., -1.5],
+    [-3.5, -0.5],
+    [-4., -1.5],
+    [-6., -1.5],
+    [-6.5, -0.5],
+    //
+    [-6.5, 0.5],
+    [-6., 1.5],
+    [-4., 1.5],
+    [-3.5, 0.5],
+    [-3., 1.5],
+    [-2., 1.5],
+    [-1.5, 0.5],
+    [-1., 1.5],
+    [0., 1.5],
+    [0.5, 0.5],
+    [1., 0.25],
+    [0.5, 0.],
+];
+
 fn to_f32_color(r: u8, g: u8, b: u8) -> [f32; 4] {
     [r as f32 / 256.0, g as f32 / 256.0, b as f32 / 256.0, 1.0]
 }
@@ -129,21 +159,38 @@ impl Display {
         let ground_bg_color: [f32; 4] = to_f32_color(218, 165, 32);
         pw::clear(ground_bg_color, graphics);
 
-        // let win_size = &context.viewport.unwrap().window_size;
         let center = self.win_size * 0.5;
 
         let scale = 1. / self.cam_pos.z;
-        let transform = context
-            .transform
+
+        let cam_transform = IDENT_TRANSFORM
             .trans(center.x, center.y)
             .scale(scale, scale)
-            .trans(-self.cam_pos.x, self.cam_pos.y);
+            .trans(-self.cam_pos.x, self.cam_pos.y)
+            .flip_v();
 
+        let home_transform = context.transform.append_transform(cam_transform);
         for home_loc in &ws.home_locs {
             const RAD: f64 = world_state::WorldState::HOME_RADIUS;
-            const HOME_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
-            let rect = pw::ellipse::centered([home_loc.x, -home_loc.y, RAD, RAD]);
-            pw::ellipse(HOME_COLOR, rect, transform, graphics);
+            const HOME_COLOR: [f32; 4] = [0., 0., 0., 1.];
+            let rect = pw::ellipse::centered([home_loc.x, home_loc.y, RAD, RAD]);
+            pw::ellipse(HOME_COLOR, rect, home_transform, graphics);
+        }
+
+        for ant_pose in ws.ant_poses.values() {
+            let ant_color: [f32; 4] = to_f32_color(86, 101, 115);
+
+            let ant_model_transform = IDENT_TRANSFORM
+                .scale(2., 2.)
+                .trans(ant_pose.pos.x, ant_pose.pos.y)
+                .rot_rad(ant_pose.dir);
+
+            let ant_transform = context
+                .transform
+                .append_transform(cam_transform)
+                .append_transform(ant_model_transform);
+
+            pw::polygon(ant_color, &ANT_POLY, ant_transform, graphics);
         }
 
         // Center dot for debug if needed.
