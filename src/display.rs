@@ -2,40 +2,140 @@ use std::f64::consts::SQRT_2;
 
 use glam;
 use piston_window as pw;
-use pw::Transformed;
+use pw::{Transformed, Graphics};
 
 use super::world_state;
 
 const IDENT_TRANSFORM: [[f64; 3]; 2] = [[1., 0., 0.], [0., 1., 0.]];
 
-const ANT_POLY: [[f64; 2]; 24] = [
+// const ANT_POLY: [[f64; 2]; 24] = [
+//     [0.5, 0.],
+//     [1., -0.25],
+//     [0.5, -0.5],
+//     [0., -1.5],
+//     [-1., -1.5],
+//     [-1.5, -0.5],
+//     [-2., -1.5],
+//     [-3., -1.5],
+//     [-3.5, -0.5],
+//     [-4., -1.5],
+//     [-6., -1.5],
+//     [-6.5, -0.5],
+//     //
+//     [-6.5, 0.5],
+//     [-6., 1.5],
+//     [-4., 1.5],
+//     [-3.5, 0.5],
+//     [-3., 1.5],
+//     [-2., 1.5],
+//     [-1.5, 0.5],
+//     [-1., 1.5],
+//     [0., 1.5],
+//     [0.5, 0.5],
+//     [1., 0.25],
+//     [0.5, 0.],
+// ];
+
+const ANT_TRIS: [[f64; 2]; 20 * 3] = [
+    // top mandible
     [0.5, 0.],
     [1., -0.25],
     [0.5, -0.5],
-    [0., -1.5],
-    [-1., -1.5],
-    [-1.5, -0.5],
-    [-2., -1.5],
-    [-3., -1.5],
-    [-3.5, -0.5],
-    [-4., -1.5],
-    [-6., -1.5],
-    [-6.5, -0.5],
-    //
-    [-6.5, 0.5],
-    [-6., 1.5],
-    [-4., 1.5],
-    [-3.5, 0.5],
-    [-3., 1.5],
-    [-2., 1.5],
-    [-1.5, 0.5],
-    [-1., 1.5],
-    [0., 1.5],
+
+    // bottom mandible
     [0.5, 0.5],
     [1., 0.25],
     [0.5, 0.],
+
+    // head
+    [0.5, -0.5],
+    [0., -1.5],
+    [-1., -1.5],
+
+    [0.5, -0.5],
+    [-1., -1.5],
+    [-1.5, -0.5],
+
+    [0.5, -0.5],
+    [-1.5, -0.5],
+    [-1.5, 0.5],
+
+    [0.5, -0.5],
+    [-1.5, 0.5],
+    [-1., 1.5],
+
+    [0.5, -0.5],
+    [-1., 1.5],
+    [0., 1.5],
+
+    [0.5, -0.5],
+    [0., 1.5],
+    [0.5, 0.5],
+
+    // thorax
+    [-1.5, -0.5],
+    [-2., -1.5],
+    [-3., -1.5],
+
+    [-1.5, -0.5],
+    [-3., -1.5],
+    [-3.5, -0.5],
+
+    [-1.5, -0.5],
+    [-3.5, -0.5],
+    [-3.5, 0.5],
+
+    [-1.5, -0.5],
+    [-3.5, 0.5],
+    [-3., 1.5],
+
+    [-1.5, -0.5],
+    [-3., 1.5],
+    [-2., 1.5],
+
+    [-1.5, -0.5],
+    [-2., 1.5],
+    [-1.5, 0.5],
+
+    // abdomen
+    [-3.5, -0.5],
+    [-4., -1.5],
+    [-6., -1.5],
+
+    [-3.5, -0.5],
+    [-6., -1.5],
+    [-6.5, -0.5],
+
+    [-3.5, -0.5],
+    [-6.5, -0.5],
+    [-6.5, 0.5],
+
+    [-3.5, -0.5],
+    [-6.5, 0.5],
+    [-6., 1.5],
+
+    [-3.5, -0.5],
+    [-6., 1.5],
+    [-4., 1.5],
+
+    [-3.5, -0.5],
+    [-4., 1.5],
+    [-3.5, 0.5],
 ];
 
+/// Transformed x coordinate as f32.
+#[inline(always)]
+fn tx(m: pw::types::Matrix2d, x: pw::types::Scalar, y: pw::types::Scalar) -> f32 {
+    (m[0][0] * x + m[0][1] * y + m[0][2]) as f32
+}
+
+/// Transformed y coordinate as f32.
+#[inline(always)]
+fn ty(m: pw::types::Matrix2d, x: pw::types::Scalar, y: pw::types::Scalar) -> f32 {
+    (m[1][0] * x + m[1][1] * y + m[1][2]) as f32
+}
+
+#[inline(always)]
 fn to_f32_color(r: u8, g: u8, b: u8) -> [f32; 4] {
     [r as f32 / 256.0, g as f32 / 256.0, b as f32 / 256.0, 1.0]
 }
@@ -177,9 +277,11 @@ impl Display {
             pw::ellipse(HOME_COLOR, rect, home_transform, graphics);
         }
 
+        // Draw the ants. They are concave polys, so we have to triangulate
+        // them ourselves.
+        let mut ant_tris: Vec<[f32; 2]> = vec![];
+        ant_tris.reserve(ANT_TRIS.len() * ws.ant_poses.len());
         for ant_pose in ws.ant_poses.values() {
-            let ant_color: [f32; 4] = to_f32_color(86, 101, 115);
-
             let ant_model_transform = IDENT_TRANSFORM
                 .scale(2., 2.)
                 .trans(ant_pose.pos.x, ant_pose.pos.y)
@@ -190,8 +292,20 @@ impl Display {
                 .append_transform(cam_transform)
                 .append_transform(ant_model_transform);
 
-            pw::polygon(ant_color, &ANT_POLY, ant_transform, graphics);
+            for vertex in ANT_TRIS {
+                ant_tris.push([
+                    tx(ant_transform, vertex[0], vertex[1]),
+                    ty(ant_transform, vertex[0], vertex[1]),
+                ]);
+            }
         }
+
+        let ant_color: [f32; 4] = to_f32_color(86, 101, 115);
+        graphics.tri_list(
+            &context.draw_state,
+            &ant_color,
+            |f| f(&ant_tris[..]),
+        );
 
         // Center dot for debug if needed.
         // pw::ellipse(
