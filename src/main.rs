@@ -71,6 +71,8 @@ fn main() {
         .build()
         .unwrap();
 
+    display.init(&mut window.device);
+
     const START_SPEED: i32 = 3;
     let mut sim_speed = START_SPEED;
 
@@ -78,6 +80,11 @@ fn main() {
 
     let mut updates_per_step: u64 = get_updates_per_step(sim_speed);
     let mut steps_since_update = u64::MAX;
+
+    // let mut factory = window.factory.clone();
+    // use gfx::factory::FactoryExt;
+    // factory.create_vertex_buffer_with_slice();
+    // let e = window.encoder;
 
     while let Some(event) = window.next() {
         handle_input(&event, &mut sim_speed, &mut updates_per_step, &mut paused);
@@ -96,8 +103,8 @@ fn main() {
             }
         });
 
-        window.draw_2d(&event, |context, graphics, _device| {
-            display.draw_env(&sim.ws, context, graphics);
+        window.draw_2d(&event, |context, graphics, device| {
+            display.draw_env(&sim.ws, context, graphics, device);
         });
     }
 }

@@ -37,10 +37,14 @@ checksum = "000444226fcff248f2bc4c7625be32c63caccfecc2723a2b9f78a7487a49c407"
 name = "ant_sim"
 version = "0.1.0"
 dependencies = [
+ "gfx_device_gl",
+ "gfx_gl",
+ "gl",
  "glam",
  "piston_window",
  "rand",
  "rand_distr",
+ "shader_version",
 ]
 
 [[package]]

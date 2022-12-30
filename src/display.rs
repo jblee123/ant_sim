@@ -1,5 +1,6 @@
 use std::f64::consts::SQRT_2;
 
+use gl;
 use glam;
 use piston_window as pw;
 use pw::{Transformed, Graphics};
@@ -145,6 +146,8 @@ pub struct Display {
     cam_pos: glam::DVec3,
     mouse_pos: glam::DVec2,
     left_mouse_down: bool,
+
+    ant_vert_shader: gl::types::GLuint,
 }
 
 impl Display {
@@ -154,6 +157,29 @@ impl Display {
             cam_pos: glam::DVec3::new(0., 0., 1.),
             mouse_pos: glam::DVec2::new(0., 0.),
             left_mouse_down: false,
+            ant_vert_shader: 0,
+        }
+    }
+
+    fn shader_from_source(&self, glapi: &gfx_gl::Gl, source: &str) -> Result<gl::types::GLuint, String> {
+        use shader_version::Shaders;
+        Ok(0)
+    }
+
+    pub fn init(&mut self, device: &mut gfx_device_gl::Device) {
+        let vertex_shader_source = "\
+            #version 320 core \
+            layout (location = 0) in vec2 aPos; \
+            void main() { \
+               gl_Position = vec4(aPos.x, aPos.y, 1.0, 1.0); \
+            }";
+
+        unsafe {
+            device.with_gl(|glapi| {
+                self.ant_vert_shader = glapi.CreateShader(gl::VERTEX_SHADER);
+
+                self.shader_from_source(glapi, vertex_shader_source);
+            });
         }
     }
 
@@ -250,14 +276,76 @@ impl Display {
         });
     }
 
+    fn draw_ants(
+        &self,
+        ws: &world_state::WorldState,
+        cam_transform: &[[f64; 3]; 2],
+        context: &pw::Context,
+        graphics: &mut pw::G2d<'_>,
+    ) {
+        // use std::time::Instant;
+        // use std::time::Duration;
+        // static mut avg_duration: Duration = Duration::new(0, 0);
+
+        // let now = Instant::now();
+
+        // Draw the ants. They are concave polys, so we have to triangulate
+        // them ourselves.
+        let mut ant_tris: Vec<[f32; 2]> = vec![];
+        ant_tris.reserve(ANT_TRIS.len() * ws.ant_poses.len());
+        for ant_pose in ws.ant_poses.values() {
+            let ant_model_transform = IDENT_TRANSFORM
+                .scale(2., 2.)
+                .trans(ant_pose.pos.x, ant_pose.pos.y)
+                .rot_rad(ant_pose.dir);
+
+            let ant_transform = context
+                .transform
+                .append_transform(*cam_transform)
+                .append_transform(ant_model_transform);
+
+            for vertex in ANT_TRIS {
+                ant_tris.push([
+                    tx(ant_transform, vertex[0], vertex[1]),
+                    ty(ant_transform, vertex[0], vertex[1]),
+                ]);
+            }
+        }
+
+        let ant_color: [f32; 4] = to_f32_color(86, 101, 115);
+        graphics.tri_list(
+            &context.draw_state,
+            &ant_color,
+            |f| f(&ant_tris[..]),
+        );
+
+
+        // gl::ShaderSource();
+        // context.
+
+        // let elapsed = now.elapsed();
+        // unsafe {
+        //     avg_duration = avg_duration.mul_f64(0.99) + elapsed.mul_f64(0.01);
+        //     println!("Elapsed: {:.2?}", avg_duration);
+        // }
+    }
+
     pub fn draw_env(
         &self,
         ws: &world_state::WorldState,
         context: pw::Context,
         graphics: &mut pw::G2d<'_>,
+        device: &mut gfx_device_gl::Device,
     ) {
-        let ground_bg_color: [f32; 4] = to_f32_color(218, 165, 32);
-        pw::clear(ground_bg_color, graphics);
+        unsafe {
+            device.with_gl(|glapi| {
+                glapi.ClearColor(0., 1., 0., 0.);
+                glapi.Clear(gl::COLOR_BUFFER_BIT);
+            });
+        }
+
+        // let ground_bg_color: [f32; 4] = to_f32_color(218, 165, 32);
+        // pw::clear(ground_bg_color, graphics);
 
         let center = self.win_size * 0.5;
 
@@ -277,35 +365,37 @@ impl Display {
             pw::ellipse(HOME_COLOR, rect, home_transform, graphics);
         }
 
+        // self.draw_ants(ws, &cam_transform, &context, graphics);
+
         // Draw the ants. They are concave polys, so we have to triangulate
         // them ourselves.
-        let mut ant_tris: Vec<[f32; 2]> = vec![];
-        ant_tris.reserve(ANT_TRIS.len() * ws.ant_poses.len());
-        for ant_pose in ws.ant_poses.values() {
-            let ant_model_transform = IDENT_TRANSFORM
-                .scale(2., 2.)
-                .trans(ant_pose.pos.x, ant_pose.pos.y)
-                .rot_rad(ant_pose.dir);
+        // let mut ant_tris: Vec<[f32; 2]> = vec![];
+        // ant_tris.reserve(ANT_TRIS.len() * ws.ant_poses.len());
+        // for ant_pose in ws.ant_poses.values() {
+        //     let ant_model_transform = IDENT_TRANSFORM
+        //         .scale(2., 2.)
+        //         .trans(ant_pose.pos.x, ant_pose.pos.y)
+        //         .rot_rad(ant_pose.dir);
 
-            let ant_transform = context
-                .transform
-                .append_transform(cam_transform)
-                .append_transform(ant_model_transform);
+        //     let ant_transform = context
+        //         .transform
+        //         .append_transform(cam_transform)
+        //         .append_transform(ant_model_transform);
 
-            for vertex in ANT_TRIS {
-                ant_tris.push([
-                    tx(ant_transform, vertex[0], vertex[1]),
-                    ty(ant_transform, vertex[0], vertex[1]),
-                ]);
-            }
-        }
+        //     for vertex in ANT_TRIS {
+        //         ant_tris.push([
+        //             tx(ant_transform, vertex[0], vertex[1]),
+        //             ty(ant_transform, vertex[0], vertex[1]),
+        //         ]);
+        //     }
+        // }
 
-        let ant_color: [f32; 4] = to_f32_color(86, 101, 115);
-        graphics.tri_list(
-            &context.draw_state,
-            &ant_color,
-            |f| f(&ant_tris[..]),
-        );
+        // let ant_color: [f32; 4] = to_f32_color(86, 101, 115);
+        // graphics.tri_list(
+        //     &context.draw_state,
+        //     &ant_color,
+        //     |f| f(&ant_tris[..]),
+        // );
 
         // Center dot for debug if needed.
         // pw::ellipse(
