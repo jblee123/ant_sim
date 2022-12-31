@@ -148,6 +148,10 @@ pub struct Display {
     mouse_pos: glam::DVec2,
     left_mouse_down: bool,
     draw_grid: bool,
+    move_cam_left: bool,
+    move_cam_right: bool,
+    move_cam_up: bool,
+    move_cam_down: bool,
 }
 
 impl Display {
@@ -158,6 +162,10 @@ impl Display {
             mouse_pos: glam::DVec2::new(0., 0.),
             left_mouse_down: false,
             draw_grid: false,
+            move_cam_left: false,
+            move_cam_right: false,
+            move_cam_up: false,
+            move_cam_down: false,
         }
     }
 
@@ -182,6 +190,20 @@ impl Display {
             pw::Button::Mouse(pw::MouseButton::Left) => {
                 self.left_mouse_down = true;
             }
+
+            pw::Button::Keyboard(pw::Key::A) => {
+                self.move_cam_left = true;
+            }
+            pw::Button::Keyboard(pw::Key::D) => {
+                self.move_cam_right = true;
+            }
+            pw::Button::Keyboard(pw::Key::W) => {
+                self.move_cam_up = true;
+            }
+            pw::Button::Keyboard(pw::Key::S) => {
+                self.move_cam_down = true;
+            }
+
             pw::Button::Keyboard(pw::Key::G) => {
                 self.draw_grid = !self.draw_grid;
             }
@@ -194,6 +216,20 @@ impl Display {
             pw::Button::Mouse(pw::MouseButton::Left) => {
                 self.left_mouse_down = false;
             }
+
+            pw::Button::Keyboard(pw::Key::A) => {
+                self.move_cam_left = false;
+            }
+            pw::Button::Keyboard(pw::Key::D) => {
+                self.move_cam_right = false;
+            }
+            pw::Button::Keyboard(pw::Key::W) => {
+                self.move_cam_up = false;
+            }
+            pw::Button::Keyboard(pw::Key::S) => {
+                self.move_cam_down = false;
+            }
+
             _ => {}
         }
     }
@@ -267,6 +303,28 @@ impl Display {
         event.mouse_scroll(|params| {
             self.handle_mouse_scroll(params);
         });
+    }
+
+    fn move_cam_from_keyboard_input(&mut self) {
+        let mut movement = glam::DVec2::new(0., 0.);
+        if self.move_cam_left {
+            movement.x -= 1.;
+        }
+        if self.move_cam_right {
+            movement.x += 1.;
+        }
+        if self.move_cam_up {
+            movement.y += 1.;
+        }
+        if self.move_cam_down {
+            movement.y -= 1.;
+        }
+
+        const CAM_VEL: f64 = 10.;
+        movement *= self.get_scale_inv() * CAM_VEL;
+
+        self.cam_pos.x += movement.x;
+        self.cam_pos.y += movement.y;
     }
 
     fn draw_grid(
@@ -363,11 +421,13 @@ impl Display {
     }
 
     pub fn draw_env(
-        &self,
+        &mut self,
         ws: &world_state::WorldState,
         context: &pw::Context,
         graphics: &mut pw::G2d<'_>,
     ) {
+        self.move_cam_from_keyboard_input();
+
         let ground_bg_color: [f32; 4] = to_f32_color(218, 165, 32);
         pw::clear(ground_bg_color, graphics);
 
