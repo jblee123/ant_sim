@@ -63,6 +63,8 @@ fn main() {
         }
     });
 
+    sim.add_food_group(glam::DVec2::new(171., 125.), 50.);
+
     let mut display = display::Display::new(DISP_SIZE);
 
     const DISP_SIZE: [f64; 2] = [800., 600.];

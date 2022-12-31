@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::f64::consts::SQRT_2;
 
 use glam;
 use glam::Vec3Swizzles;
 use piston_window as pw;
-use pw::{Transformed, Graphics, DrawState};
+use pw::{DrawState, Graphics, Transformed};
 
 use super::world_state;
 
@@ -38,6 +39,7 @@ const IDENT_TRANSFORM: [[f64; 3]; 2] = [[1., 0., 0.], [0., 1., 0.]];
 //     [0.5, 0.],
 // ];
 
+#[rustfmt::skip]
 const ANT_TRIS: [[f64; 2]; 20 * 3] = [
     // top mandible
     [0.5, 0.],
@@ -148,6 +150,7 @@ pub struct Display {
     mouse_pos: glam::DVec2,
     left_mouse_down: bool,
     draw_grid: bool,
+    draw_food: bool,
     move_cam_left: bool,
     move_cam_right: bool,
     move_cam_up: bool,
@@ -162,6 +165,7 @@ impl Display {
             mouse_pos: glam::DVec2::new(0., 0.),
             left_mouse_down: false,
             draw_grid: false,
+            draw_food: true,
             move_cam_left: false,
             move_cam_right: false,
             move_cam_up: false,
@@ -206,6 +210,9 @@ impl Display {
 
             pw::Button::Keyboard(pw::Key::G) => {
                 self.draw_grid = !self.draw_grid;
+            }
+            pw::Button::Keyboard(pw::Key::D0) => {
+                self.draw_food = !self.draw_food;
             }
             _ => {}
         }
@@ -327,11 +334,7 @@ impl Display {
         self.cam_pos.y += movement.y;
     }
 
-    fn draw_grid(
-        &self,
-        transform: [[f64; 3]; 2],
-        graphics: &mut pw::G2d<'_>,
-    ) {
+    fn draw_grid(&self, transform: [[f64; 3]; 2], graphics: &mut pw::G2d<'_>) {
         const GRID_RESOLUTION: f64 = 20.;
         const GRID_COLOR: [f32; 4] = [0., 0., 0., 1.];
 
@@ -340,7 +343,7 @@ impl Display {
         let viewport_size = self.win_size * self.get_scale_inv();
         let viewport_bottom_left = self.cam_pos.xy() - (viewport_size * 0.5);
         let viewport_top_right = viewport_bottom_left + viewport_size;
-        
+
         let get_start = |s: f64| {
             if s >= 0. {
                 GRID_RESOLUTION - (s % GRID_RESOLUTION) + s
@@ -356,7 +359,8 @@ impl Display {
                 line_radius,
                 [line_x, viewport_bottom_left.y, line_x, viewport_top_right.y],
                 transform,
-                graphics);
+                graphics,
+            );
 
             line_x += GRID_RESOLUTION;
         }
@@ -368,7 +372,8 @@ impl Display {
                 line_radius,
                 [viewport_bottom_left.x, line_y, viewport_top_right.x, line_y],
                 transform,
-                graphics);
+                graphics,
+            );
 
             line_y += GRID_RESOLUTION;
         }
@@ -388,6 +393,21 @@ impl Display {
         }
     }
 
+    fn draw_food(
+        &self,
+        food_locs: &HashSet<glam::IVec2>,
+        transform: [[f64; 3]; 2],
+        graphics: &mut pw::G2d<'_>,
+    ) {
+        let radius = world_state::WorldState::GRID_SIZE * 0.5;
+        let food_color: [f32; 4] = to_f32_color(34, 177, 76);
+        for food_loc in food_locs {
+            let rect =
+                pw::ellipse::centered([food_loc.x as f64, food_loc.y as f64, radius, radius]);
+            pw::ellipse(food_color, rect, transform, graphics);
+        }
+    }
+
     fn draw_ants(
         &self,
         ant_poses: &HashMap<u64, world_state::Pose>,
@@ -404,9 +424,7 @@ impl Display {
                 .trans(ant_pose.pos.x, ant_pose.pos.y)
                 .rot_rad(ant_pose.dir);
 
-            let ant_transform =
-                transform
-                .append_transform(ant_model_transform);
+            let ant_transform = transform.append_transform(ant_model_transform);
 
             for vertex in ANT_TRIS {
                 ant_tris.push([
@@ -448,8 +466,15 @@ impl Display {
         }
 
         self.draw_home_locs(&ws.home_locs, transform_cam_only, graphics);
-
-        self.draw_ants(&ws.ant_poses, transform_cam_only, &context.draw_state, graphics);
+        if self.draw_food {
+            self.draw_food(&ws.food_locs, transform_cam_only, graphics);
+        }
+        self.draw_ants(
+            &ws.ant_poses,
+            transform_cam_only,
+            &context.draw_state,
+            graphics,
+        );
 
         // Center dot for debug if needed.
         // pw::ellipse(

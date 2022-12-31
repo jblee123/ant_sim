@@ -30,6 +30,10 @@ impl Simulator {
         Ok(())
     }
 
+    pub fn add_food_group(&mut self, loc: glam::DVec2, radius: f64) {
+        self.ws.add_food_group(loc, radius);
+    }
+
     fn exec_action(action: ant::Action, ant: &mut ant::Ant, ws: &mut world_state::WorldState) {
         match action {
             ant::Action::Move(movement) => {
