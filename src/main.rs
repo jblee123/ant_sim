@@ -97,7 +97,7 @@ fn main() {
         });
 
         window.draw_2d(&event, |context, graphics, _device| {
-            display.draw_env(&sim.ws, context, graphics);
+            display.draw_env(&sim.ws, &context, graphics);
         });
     }
 }

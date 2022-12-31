@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::f64::consts::SQRT_2;
 
 use glam;
+use glam::Vec3Swizzles;
 use piston_window as pw;
-use pw::{Transformed, Graphics};
+use pw::{Transformed, Graphics, DrawState};
 
 use super::world_state;
 
@@ -145,6 +147,7 @@ pub struct Display {
     cam_pos: glam::DVec3,
     mouse_pos: glam::DVec2,
     left_mouse_down: bool,
+    draw_grid: bool,
 }
 
 impl Display {
@@ -154,7 +157,20 @@ impl Display {
             cam_pos: glam::DVec3::new(0., 0., 1.),
             mouse_pos: glam::DVec2::new(0., 0.),
             left_mouse_down: false,
+            draw_grid: false,
         }
+    }
+
+    #[inline(always)]
+    fn get_scale(&self) -> f64 {
+        // cam_pos.z should always be > 0. If that's not the case, then
+        // something is very wrong and the app needs to die a horrible death.
+        1. / self.cam_pos.z
+    }
+
+    #[inline(always)]
+    fn get_scale_inv(&self) -> f64 {
+        self.cam_pos.z
     }
 
     fn handle_resize(&mut self, args: &pw::ResizeArgs) {
@@ -165,6 +181,9 @@ impl Display {
         match button {
             pw::Button::Mouse(pw::MouseButton::Left) => {
                 self.left_mouse_down = true;
+            }
+            pw::Button::Keyboard(pw::Key::G) => {
+                self.draw_grid = !self.draw_grid;
             }
             _ => {}
         }
@@ -185,8 +204,8 @@ impl Display {
 
     fn handle_mouse_relative(&mut self, params: [f64; 2]) {
         if self.left_mouse_down {
-            self.cam_pos.x -= params[0] * self.cam_pos.z;
-            self.cam_pos.y += params[1] * self.cam_pos.z;
+            self.cam_pos.x -= params[0] * self.get_scale_inv();
+            self.cam_pos.y += params[1] * self.get_scale_inv();
         }
     }
 
@@ -250,46 +269,85 @@ impl Display {
         });
     }
 
-    pub fn draw_env(
+    fn draw_grid(
         &self,
-        ws: &world_state::WorldState,
-        context: pw::Context,
+        transform: [[f64; 3]; 2],
         graphics: &mut pw::G2d<'_>,
     ) {
-        let ground_bg_color: [f32; 4] = to_f32_color(218, 165, 32);
-        pw::clear(ground_bg_color, graphics);
+        const GRID_RESOLUTION: f64 = 20.;
+        const GRID_COLOR: [f32; 4] = [0., 0., 0., 1.];
 
-        let center = self.win_size * 0.5;
+        let line_radius = 0.5 / self.get_scale();
 
-        let scale = 1. / self.cam_pos.z;
+        let viewport_size = self.win_size * self.get_scale_inv();
+        let viewport_bottom_left = self.cam_pos.xy() - (viewport_size * 0.5);
+        let viewport_top_right = viewport_bottom_left + viewport_size;
+        
+        let get_start = |s: f64| {
+            if s >= 0. {
+                GRID_RESOLUTION - (s % GRID_RESOLUTION) + s
+            } else {
+                (-s % GRID_RESOLUTION) + s
+            }
+        };
 
-        let cam_transform = IDENT_TRANSFORM
-            .trans(center.x, center.y)
-            .scale(scale, scale)
-            .trans(-self.cam_pos.x, self.cam_pos.y)
-            .flip_v();
+        let mut line_x = get_start(viewport_bottom_left.x);
+        while line_x <= viewport_top_right.x {
+            pw::line(
+                GRID_COLOR,
+                line_radius,
+                [line_x, viewport_bottom_left.y, line_x, viewport_top_right.y],
+                transform,
+                graphics);
 
-        let home_transform = context.transform.append_transform(cam_transform);
-        for home_loc in &ws.home_locs {
+            line_x += GRID_RESOLUTION;
+        }
+
+        let mut line_y = get_start(viewport_bottom_left.y);
+        while line_y <= viewport_top_right.y {
+            pw::line(
+                GRID_COLOR,
+                line_radius,
+                [viewport_bottom_left.x, line_y, viewport_top_right.x, line_y],
+                transform,
+                graphics);
+
+            line_y += GRID_RESOLUTION;
+        }
+    }
+
+    fn draw_home_locs(
+        &self,
+        home_locs: &Vec<glam::DVec2>,
+        transform: [[f64; 3]; 2],
+        graphics: &mut pw::G2d<'_>,
+    ) {
+        for home_loc in home_locs {
             const RAD: f64 = world_state::WorldState::HOME_RADIUS;
             const HOME_COLOR: [f32; 4] = [0., 0., 0., 1.];
             let rect = pw::ellipse::centered([home_loc.x, home_loc.y, RAD, RAD]);
-            pw::ellipse(HOME_COLOR, rect, home_transform, graphics);
+            pw::ellipse(HOME_COLOR, rect, transform, graphics);
         }
+    }
 
-        // Draw the ants. They are concave polys, so we have to triangulate
-        // them ourselves.
+    fn draw_ants(
+        &self,
+        ant_poses: &HashMap<u64, world_state::Pose>,
+        transform: [[f64; 3]; 2],
+        draw_state: &DrawState,
+        graphics: &mut pw::G2d<'_>,
+    ) {
+        // The ants are concave polys, so we have to triangulate them ourselves.
         let mut ant_tris: Vec<[f32; 2]> = vec![];
-        ant_tris.reserve(ANT_TRIS.len() * ws.ant_poses.len());
-        for ant_pose in ws.ant_poses.values() {
+        ant_tris.reserve(ANT_TRIS.len() * ant_poses.len());
+        for ant_pose in ant_poses.values() {
             let ant_model_transform = IDENT_TRANSFORM
                 .scale(2., 2.)
                 .trans(ant_pose.pos.x, ant_pose.pos.y)
                 .rot_rad(ant_pose.dir);
 
-            let ant_transform = context
-                .transform
-                .append_transform(cam_transform)
+            let ant_transform =
+                transform
                 .append_transform(ant_model_transform);
 
             for vertex in ANT_TRIS {
@@ -301,11 +359,37 @@ impl Display {
         }
 
         let ant_color: [f32; 4] = to_f32_color(86, 101, 115);
-        graphics.tri_list(
-            &context.draw_state,
-            &ant_color,
-            |f| f(&ant_tris[..]),
-        );
+        graphics.tri_list(draw_state, &ant_color, |f| f(&ant_tris[..]));
+    }
+
+    pub fn draw_env(
+        &self,
+        ws: &world_state::WorldState,
+        context: &pw::Context,
+        graphics: &mut pw::G2d<'_>,
+    ) {
+        let ground_bg_color: [f32; 4] = to_f32_color(218, 165, 32);
+        pw::clear(ground_bg_color, graphics);
+
+        let center = self.win_size * 0.5;
+
+        let scale = self.get_scale();
+
+        let cam_transform = IDENT_TRANSFORM
+            .trans(center.x, center.y)
+            .scale(scale, scale)
+            .trans(-self.cam_pos.x, self.cam_pos.y)
+            .flip_v();
+
+        let transform_cam_only = context.transform.append_transform(cam_transform);
+
+        if self.draw_grid {
+            self.draw_grid(transform_cam_only, graphics);
+        }
+
+        self.draw_home_locs(&ws.home_locs, transform_cam_only, graphics);
+
+        self.draw_ants(&ws.ant_poses, transform_cam_only, &context.draw_state, graphics);
 
         // Center dot for debug if needed.
         // pw::ellipse(

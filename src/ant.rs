@@ -5,6 +5,7 @@ use rand_distr::{self, Distribution};
 
 pub struct Readings {}
 
+#[derive(Copy, Clone, Debug)]
 pub enum Action {
     // None,
     Move(glam::DVec2),
@@ -15,11 +16,14 @@ pub enum Action {
     // LayScent,
 }
 
+const WANDER_PERSIST: u32 = 5;
+
 #[derive(Debug)]
 pub struct Ant {
     pub id: u64,
     rng: rand::rngs::StdRng,
     norm_dist: rand_distr::Normal<f64>,
+    wander_moves_remaining: u32,
 }
 
 impl Ant {
@@ -28,16 +32,30 @@ impl Ant {
             id,
             rng: rand::rngs::StdRng::seed_from_u64(id),
             norm_dist: rand_distr::Normal::new(0., PI / 4.).unwrap(),
+            wander_moves_remaining: rand::random::<u32>() % (WANDER_PERSIST + 1),
         }
     }
 
     pub fn get_actions(&mut self, _readings: &Readings) -> Vec<Action> {
-        let dir = self.norm_dist.sample(&mut self.rng);
-        // let dir = 0.0872664; // ~5 deg
-        let move_vec = glam::DVec2::from_angle(dir);
-        let move_rand = Action::Move(move_vec);
+        let move_rand = self.wander();
 
         vec![move_rand]
         // vec![Action::None]
+    }
+
+    fn wander(&mut self) -> Action {
+        let dir = if self.wander_moves_remaining == 0 {
+            self.wander_moves_remaining = rand::random::<u32>() % (WANDER_PERSIST + 1);
+
+            self.norm_dist.sample(&mut self.rng)
+            // 0.0872664; // ~5 deg (for debug)
+        } else {
+            self.wander_moves_remaining -= 1;
+
+            0.
+        };
+
+        let move_vec = glam::DVec2::from_angle(dir);
+        Action::Move(move_vec)
     }
 }
